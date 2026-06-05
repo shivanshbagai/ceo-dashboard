@@ -387,11 +387,20 @@ export default function App() {
                               ))}
                             </Box>
                           </Box>
-                          <Box as="tbody" divideY="1px" divideColor={theme.borderSubtle}>
+                          <Box as="tbody">
                             {chatResponse.data.map((row, i) => (
                               <Box as="tr" key={i} _hover={{ bg: "rgba(255,255,255,0.02)" }} transition="background 0.2s">
                                 {Object.values(row).map((val, j) => (
-                                  <Box as="td" key={j} p={4} fontSize="sm" color={theme.textPrimary} fontWeight="500">
+                                  <Box 
+                                    as="td" 
+                                    key={j} 
+                                    p={4} 
+                                    fontSize="sm" 
+                                    color={theme.textPrimary} 
+                                    fontWeight="500"
+                                    borderBottom="1px solid"
+                                    borderColor={theme.borderSubtle}
+                                  >
                                     {val}
                                   </Box>
                                 ))}
