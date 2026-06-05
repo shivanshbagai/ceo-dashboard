@@ -3,7 +3,7 @@ import {
   Box, Flex, VStack, Text, Heading, SimpleGrid, Card, CardBody,
   Stat, StatLabel, StatNumber, StatHelpText, StatArrow, Input, Button, Spinner, Badge
 } from '@chakra-ui/react';
-import { LayoutDashboard, MessageSquare, Sparkles, Activity, FileText } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Sparkles, Activity, FileText, Star } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush
 } from 'recharts';
@@ -90,10 +90,14 @@ export default function App() {
 
   const cardStyle = {
     bg: theme.bgCard,
-    border: "1px solid",
-    borderColor: theme.borderSubtle,
+    border: "none",
     borderRadius: "2xl",
-    shadow: "none",
+    boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+    transition: "all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+    _hover: {
+      transform: 'translateY(-6px)',
+      boxShadow: '0 30px 60px rgba(0,0,0,0.5), 0 0 40px rgba(181, 124, 255, 0.1)'
+    }
   };
 
   // Helper function for Sidebar Navigation Items
@@ -180,7 +184,7 @@ export default function App() {
             <>
               {/* KPI Strip */}
               {!kpis ? <Spinner size="xl" color={theme.accentPurple} mb={10} /> : (
-                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={10}>
+                <SimpleGrid columns={{ base: 1, md: 4 }} spacing={6} mb={10}>
                   <Card {...cardStyle}>
                     <CardBody p={6}>
                       <Stat>
@@ -209,12 +213,44 @@ export default function App() {
                   </Card>
 
                   <Card {...cardStyle}>
+
                     <CardBody p={6}>
                       <Stat>
                         <StatLabel color={theme.textMuted} fontWeight="600" textTransform="uppercase" letterSpacing="wider" mb={2}>Weighted Pipeline</StatLabel>
                         <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
                           ₹{(kpis.pipeline / 1000).toFixed(1)}k
                         </StatNumber>
+                      </Stat>
+                    </CardBody>
+                  </Card>
+
+                  {/* Anti-Gravity CSAT Card */}
+                  <Card {...cardStyle}>
+                    <CardBody p={6}>
+                      <Stat>
+                        <Flex justify="space-between" align="flex-start" mb={2}>
+                          <StatLabel color={theme.textMuted} fontWeight="600" textTransform="uppercase" letterSpacing="wider">
+                            Client Satisfaction
+                          </StatLabel>
+                          {/* 5-Star Visual Arrangement */}
+                          <Flex gap={1} mt={1}>
+                            {[1, 2, 3, 4, 5].map(i => (
+                              <Star
+                                key={i}
+                                size={14}
+                                fill={i === 5 ? "transparent" : theme.accentLime}
+                                color={theme.accentLime}
+                                strokeWidth={2}
+                              />
+                            ))}
+                          </Flex>
+                        </Flex>
+                        <Flex mt-auto mb-80 align="flex-end" >
+                          <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
+                            4.9<Text as="span" fontSize="xl" color={theme.textMuted}>/5</Text>
+                          </StatNumber>
+
+                        </Flex>
                       </Stat>
                     </CardBody>
                   </Card>
@@ -391,12 +427,12 @@ export default function App() {
                             {chatResponse.data.map((row, i) => (
                               <Box as="tr" key={i} _hover={{ bg: "rgba(255,255,255,0.02)" }} transition="background 0.2s">
                                 {Object.values(row).map((val, j) => (
-                                  <Box 
-                                    as="td" 
-                                    key={j} 
-                                    p={4} 
-                                    fontSize="sm" 
-                                    color={theme.textPrimary} 
+                                  <Box
+                                    as="td"
+                                    key={j}
+                                    p={4}
+                                    fontSize="sm"
+                                    color={theme.textPrimary}
                                     fontWeight="500"
                                     borderBottom="1px solid"
                                     borderColor={theme.borderSubtle}
