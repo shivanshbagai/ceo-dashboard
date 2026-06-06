@@ -238,7 +238,7 @@ export default function App() {
                               <Star
                                 key={i}
                                 size={14}
-                                fill={i === 5 ? "transparent" : theme.accentLime}
+                                fill={i <= Math.round(kpis.avg_csat ?? 0) ? theme.accentLime : "transparent"}
                                 color={theme.accentLime}
                                 strokeWidth={2}
                               />
@@ -247,7 +247,7 @@ export default function App() {
                         </Flex>
                         <Flex mt-auto mb-80 align="flex-end" >
                           <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
-                            4.9<Text as="span" fontSize="xl" color={theme.textMuted}>/5</Text>
+                            {(kpis.avg_csat ?? 0.0).toFixed(1)}<Text as="span" fontSize="xl" color={theme.textMuted}>/5</Text>
                           </StatNumber>
 
                         </Flex>

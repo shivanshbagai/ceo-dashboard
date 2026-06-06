@@ -136,12 +136,19 @@ def get_latest_kpis():
         row = fin_df.iloc[0]
         delta_pct = ((row["actual_revenue"] - row["target_revenue"]) / row["target_revenue"] * 100)
         
+        # Calculate Average CSAT for projects with a score
+        csat_df = run_query("SELECT AVG(csat_score) as avg_csat FROM dim_projects WHERE csat_score > 0")
+        avg_csat = csat_df.iloc[0]["avg_csat"] if not csat_df.empty else 0.0
+        if avg_csat is None:
+            avg_csat = 0.0
+        
         return {
             "month": row["month"],
             "actual_revenue": row["actual_revenue"],
             "revenue_delta_pct": round(delta_pct, 1),
             "mrr": row["mrr"],
-            "pipeline": row["total_weighted_pipeline"]
+            "pipeline": row["total_weighted_pipeline"],
+            "avg_csat": round(avg_csat, 1)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
