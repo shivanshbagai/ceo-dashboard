@@ -134,7 +134,19 @@ def get_latest_kpis():
         if avg_csat is None:
             avg_csat = 0.0
             
-        pipe_df = run_query("SELECT SUM(pipeline_value) as total_pipeline FROM crm_pipeline_and_projects")
+        # Weighted pipeline: open deals only, with stage-based probability factor
+        pipe_df = run_query("""
+            SELECT SUM(
+                CASE deal_stage
+                    WHEN 'Negotiation'   THEN pipeline_value * 0.70
+                    WHEN 'Proposal'      THEN pipeline_value * 0.40
+                    WHEN 'Qualification' THEN pipeline_value * 0.20
+                    ELSE 0
+                END
+            ) as total_pipeline
+            FROM crm_pipeline_and_projects
+            WHERE deal_stage IN ('Negotiation', 'Proposal', 'Qualification')
+        """)
         pipeline = pipe_df.iloc[0]["total_pipeline"] if not pipe_df.empty else 0.0
         if pipeline is None:
             pipeline = 0.0
