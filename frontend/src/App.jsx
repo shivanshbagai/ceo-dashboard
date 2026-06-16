@@ -31,12 +31,12 @@ export default function App() {
     setKpis(null);
     setHistory([]);
 
-    fetch("http://127.0.0.1:8000/api/kpis/latest")
+    fetch("/api/kpis/latest")
       .then(res => res.json())
       .then(data => setKpis(data))
       .catch(err => console.error("KPI Fetch Error:", err));
 
-    fetch("http://127.0.0.1:8000/api/kpis/history")
+    fetch("/api/kpis/history")
       .then(res => res.json())
       .then(data => setHistory(data))
       .catch(err => console.error("History Fetch Error:", err));
@@ -51,7 +51,7 @@ export default function App() {
   const fetchBriefing = async () => {
     setIsBriefingLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/briefing");
+      const res = await fetch("/api/briefing");
       const data = await res.json();
       setBriefing(data.briefing);
     } catch (err) {
@@ -64,7 +64,7 @@ export default function App() {
     if (!chatInput) return;
     setIsChatLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/chat", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: chatInput })
