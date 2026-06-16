@@ -449,6 +449,20 @@ export default function App() {
                         </Box>
                       </Box>
                     )}
+
+                    {/* SQL Query Dropdown */}
+                    {chatResponse.sql && (
+                      <Box mt={8}>
+                        <Box as="details" cursor="pointer">
+                          <Box as="summary" color={theme.accentPurple} fontSize="sm" fontWeight="600" _hover={{ color: "#c89dff" }} transition="color 0.2s" style={{ outline: 'none' }}>
+                            View Generated SQL Query
+                          </Box>
+                          <Box as="pre" mt={4} p={5} bg="#0f1015" borderRadius="xl" border="1px" borderColor={theme.borderSubtle} overflowX="auto" fontSize="xs" color={theme.accentLime} boxShadow="inset 0 2px 10px rgba(0,0,0,0.5)">
+                            {chatResponse.sql}
+                          </Box>
+                        </Box>
+                      </Box>
+                    )}
                   </Box>
                 )}
               </CardBody>
