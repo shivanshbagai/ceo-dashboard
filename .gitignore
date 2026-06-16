@@ -13,6 +13,7 @@ backend/*.pyo
 backend/*.egg-info/
 backend/dist/
 backend/build/
+backend/upload_csv.py
 
 # Frontend - Node
 frontend/node_modules/

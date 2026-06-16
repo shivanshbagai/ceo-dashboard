@@ -3,7 +3,8 @@ from fastapi import FastAPI, HTTPException
 # pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import pandas as pd
 import os
 import re
@@ -24,15 +25,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "company_kpis.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- Database Helpers ---
 def run_query(sql: str, params: tuple = ()) -> pd.DataFrame:
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    df = pd.read_sql_query(sql, conn, params=params)
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL is not set in .env")
+    conn = psycopg2.connect(DATABASE_URL)
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        # Avoid pandas read_sql warning by just executing and converting
+        cur.execute(sql, params)
+        if cur.description is None: # For non-SELECT statements
+            conn.commit()
+            conn.close()
+            return pd.DataFrame()
+        rows = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
     conn.close()
-    return df
+    return pd.DataFrame([dict(row) for row in rows], columns=columns) if rows else pd.DataFrame(columns=columns)
 
 # --- LLM Helpers ---
 def _call_llm(prompt: str, system: str = "", max_tokens: int = 600) -> str:
@@ -86,35 +96,17 @@ def clean_sql(sql: str) -> str:
     # Remove trailing semicolons or punctuation for regex matching
     cleaned = cleaned.rstrip(';')
     
-    # 2. Fix common pluralization/truncation typos in table names
-    cleaned = re.sub(r'\bdim_employee\b', 'dim_employees', cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r'\bdim_project\b', 'dim_projects', cleaned, flags=re.IGNORECASE)
-    
-    # 3. Handle incomplete 'dim_' table references by checking column context
-    if re.search(r'\bdim_\b', cleaned, flags=re.IGNORECASE):
-        project_cols = ['project_name', 'client_name', 'partner_lead', 'billable_hours', 'milestone_status', 'blockers_flag', 'csat_score', 'renewal_intent']
-        employee_cols = ['department', 'current_headcount', 'active_hirings', 'attrition_count']
-        
-        has_project_col = any(col in cleaned.lower() for col in project_cols)
-        has_employee_col = any(col in cleaned.lower() for col in employee_cols)
-        
-        if has_project_col and not has_employee_col:
-            cleaned = re.sub(r'\bdim_\b', 'dim_projects', cleaned, flags=re.IGNORECASE)
-        elif has_employee_col and not has_project_col:
-            cleaned = re.sub(r'\bdim_\b', 'dim_employees', cleaned, flags=re.IGNORECASE)
-        else:
-            # Default fallback to dim_projects as it is a common failure target
-            cleaned = re.sub(r'\bdim_\b', 'dim_projects', cleaned, flags=re.IGNORECASE)
-            
-    # 4. Handle missing table name (e.g. SELECT SUM(actual_revenue) FROM;)
+    project_cols = ['client_name', 'project_name', 'partner_lead', 'deal_stage', 'pipeline_value', 'billable_hours', 'milestone_status', 'blockers_flag', 'csat_score', 'renewal_intent']
+    employee_cols = ['department', 'current_headcount', 'active_hirings', 'attrition_count']
+    finance_cols = ['target_revenue', 'actual_revenue', 'mrr', 'arr']
+
     if re.search(r'\bfrom\s*$', cleaned, flags=re.IGNORECASE):
-        # Determine table based on column keywords in the query
-        if any(col in cleaned.lower() for col in ['revenue', 'mrr', 'arr', 'pipeline']):
-            cleaned = re.sub(r'\bfrom\s*$', 'FROM fact_business_performance', cleaned, flags=re.IGNORECASE)
-        elif any(col in cleaned.lower() for col in ['project', 'client', 'partner', 'hours', 'milestone', 'blocker', 'csat', 'renewal']):
-            cleaned = re.sub(r'\bfrom\s*$', 'FROM dim_projects', cleaned, flags=re.IGNORECASE)
-        elif any(col in cleaned.lower() for col in ['department', 'headcount', 'hiring', 'attrition']):
-            cleaned = re.sub(r'\bfrom\s*$', 'FROM dim_employees', cleaned, flags=re.IGNORECASE)
+        if any(col in cleaned.lower() for col in finance_cols):
+            cleaned = re.sub(r'\bfrom\s*$', 'FROM finance_sheets', cleaned, flags=re.IGNORECASE)
+        elif any(col in cleaned.lower() for col in project_cols):
+            cleaned = re.sub(r'\bfrom\s*$', 'FROM crm_pipeline_and_projects', cleaned, flags=re.IGNORECASE)
+        elif any(col in cleaned.lower() for col in employee_cols):
+            cleaned = re.sub(r'\bfrom\s*$', 'FROM hrms_data', cleaned, flags=re.IGNORECASE)
             
     # Add back the semicolon
     return cleaned + ";"
@@ -130,25 +122,30 @@ class ChatRequest(BaseModel):
 def get_latest_kpis():
     """Returns the top-level KPI strip data."""
     try:
-        fin_df = run_query("SELECT * FROM fact_business_performance ORDER BY month DESC LIMIT 1")
+        fin_df = run_query("SELECT * FROM finance_sheets ORDER BY month DESC LIMIT 1")
         if fin_df.empty:
             return {"error": "No financial data"}
         row = fin_df.iloc[0]
-        delta_pct = ((row["actual_revenue"] - row["target_revenue"]) / row["target_revenue"] * 100)
+        delta_pct = ((row["actual_revenue"] - row["target_revenue"]) / row["target_revenue"] * 100) if row["target_revenue"] else 0
         
-        # Calculate Average CSAT for projects with a score
-        csat_df = run_query("SELECT AVG(csat_score) as avg_csat FROM dim_projects WHERE csat_score > 0")
+        # Calculate Average CSAT and total pipeline
+        csat_df = run_query("SELECT AVG(csat_score) as avg_csat FROM crm_pipeline_and_projects WHERE csat_score > 0")
         avg_csat = csat_df.iloc[0]["avg_csat"] if not csat_df.empty else 0.0
         if avg_csat is None:
             avg_csat = 0.0
+            
+        pipe_df = run_query("SELECT SUM(pipeline_value) as total_pipeline FROM crm_pipeline_and_projects")
+        pipeline = pipe_df.iloc[0]["total_pipeline"] if not pipe_df.empty else 0.0
+        if pipeline is None:
+            pipeline = 0.0
         
         return {
             "month": row["month"],
-            "actual_revenue": row["actual_revenue"],
-            "revenue_delta_pct": round(delta_pct, 1),
-            "mrr": row["mrr"],
-            "pipeline": row["total_weighted_pipeline"],
-            "avg_csat": round(avg_csat, 1)
+            "actual_revenue": float(row["actual_revenue"]),
+            "revenue_delta_pct": float(round(delta_pct, 1)),
+            "mrr": float(row["mrr"]),
+            "pipeline": float(pipeline),
+            "avg_csat": float(round(avg_csat, 1))
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -158,7 +155,11 @@ def get_latest_kpis():
 def get_kpi_history():
     """Returns the full time-series for the charts."""
     try:
-        df = run_query("SELECT month, target_revenue, actual_revenue, mrr FROM fact_business_performance ORDER BY month ASC")
+        df = run_query("SELECT month, target_revenue, actual_revenue, mrr FROM finance_sheets ORDER BY month ASC")
+        # convert numeric types to float for JSON serialization
+        df['target_revenue'] = df['target_revenue'].astype(float)
+        df['actual_revenue'] = df['actual_revenue'].astype(float)
+        df['mrr'] = df['mrr'].astype(float)
         return df.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -170,27 +171,29 @@ def fallback_sql_generator(question: str) -> str:
     
     # 1. Projects and billable hours / CSAT / blockers
     if 'billable' in q or 'hours' in q:
-        return "SELECT project_name, billable_hours, partner_lead FROM dim_projects ORDER BY billable_hours DESC;"
+        return "SELECT project_name, billable_hours, partner_lead FROM crm_pipeline_and_projects ORDER BY billable_hours DESC;"
     if 'csat' in q or 'score' in q or 'satisfied' in q:
-        return "SELECT project_name, csat_score, client_name FROM dim_projects ORDER BY csat_score DESC;"
+        return "SELECT project_name, csat_score, client_name FROM crm_pipeline_and_projects ORDER BY csat_score DESC;"
     if 'blocker' in q or 'blocked' in q:
-        return "SELECT project_name, client_name, partner_lead FROM dim_projects WHERE blockers_flag = 'Yes';"
+        return "SELECT project_name, client_name, partner_lead FROM crm_pipeline_and_projects WHERE blockers_flag = 'Yes';"
     if 'delayed' in q or 'milestone' in q or 'delay' in q:
-        return "SELECT project_name, client_name, milestone_status FROM dim_projects WHERE milestone_status = 'Delayed';"
+        return "SELECT project_name, client_name, milestone_status FROM crm_pipeline_and_projects WHERE milestone_status = 'Delayed';"
     if 'project' in q:
-        return "SELECT project_name, client_name, partner_lead, milestone_status FROM dim_projects;"
+        return "SELECT project_name, client_name, partner_lead, milestone_status FROM crm_pipeline_and_projects;"
         
     # 2. Employees and headcounts
     if 'headcount' in q or 'employee' in q or 'staff' in q or 'people' in q:
         if 'highest' in q or 'max' in q or 'most' in q or 'top' in q:
-            return "SELECT department, current_headcount FROM dim_employees ORDER BY current_headcount DESC LIMIT 1;"
-        return "SELECT department, current_headcount, active_hirings, attrition_count FROM dim_employees ORDER BY current_headcount DESC;"
+            return "SELECT department, current_headcount FROM hrms_data ORDER BY current_headcount DESC LIMIT 1;"
+        return "SELECT department, current_headcount, active_hirings, attrition_count FROM hrms_data ORDER BY current_headcount DESC;"
     if 'department' in q:
-        return "SELECT department, current_headcount FROM dim_employees;"
+        return "SELECT department, current_headcount FROM hrms_data;"
         
     # 3. Revenue / MRR / Pipeline / financial performance
-    if 'revenue' in q or 'mrr' in q or 'pipeline' in q or 'financial' in q or 'performance' in q:
-        return "SELECT month, target_revenue, actual_revenue, mrr, total_weighted_pipeline FROM fact_business_performance ORDER BY month DESC;"
+    if 'revenue' in q or 'mrr' in q or 'financial' in q or 'performance' in q:
+        return "SELECT month, target_revenue, actual_revenue, mrr FROM finance_sheets ORDER BY month DESC;"
+    if 'pipeline' in q:
+        return "SELECT client_name, project_name, pipeline_value FROM crm_pipeline_and_projects ORDER BY pipeline_value DESC;"
         
     return None
 
@@ -199,27 +202,26 @@ def fallback_sql_generator(question: str) -> str:
 def ask_data_warehouse(req: ChatRequest):
     """Handles the Natural Language to SQL logic."""
     schema_doc = """
-    TABLE fact_business_performance (month TEXT, target_revenue REAL, actual_revenue REAL, mrr REAL, arr REAL, total_weighted_pipeline REAL)
-    TABLE dim_employees (department TEXT, current_headcount INTEGER, active_hirings INTEGER, attrition_count INTEGER)
-    TABLE dim_projects (client_name TEXT, project_name TEXT, partner_lead TEXT, billable_hours REAL, milestone_status TEXT, blockers_flag TEXT, csat_score REAL, renewal_intent TEXT)
+    TABLE finance_sheets (month TEXT, target_revenue NUMERIC, actual_revenue NUMERIC, mrr NUMERIC, arr NUMERIC)
+    TABLE hrms_data (department TEXT, current_headcount INTEGER, active_hirings INTEGER, attrition_count INTEGER, month TEXT)
+    TABLE crm_pipeline_and_projects (client_name TEXT, project_name TEXT, partner_lead TEXT, deal_stage TEXT, pipeline_value NUMERIC, billable_hours NUMERIC, milestone_status TEXT, blockers_flag TEXT, csat_score NUMERIC, renewal_intent TEXT)
     """
     
     # 1. Generate SQL (Now with Two-Shot Prompting and Stronger System Prompt)
     system = (
-        "You are a SQL expert. You must return ONLY a single, valid, single-line "
-        "SQLite SELECT statement. Never include markdown, backticks, or explanations. "
-        "Only query tables that are defined in the schema: fact_business_performance, dim_employees, dim_projects. "
-        "Never use incomplete table names like 'dim_'."
+        "You are a PostgreSQL expert. You must return ONLY a single, valid, single-line "
+        "PostgreSQL SELECT statement. Never include markdown, backticks, or explanations. "
+        "Only query tables that are defined in the schema: finance_sheets, hrms_data, crm_pipeline_and_projects. "
     )
     
     prompt = f"""DATABASE SCHEMA:
 {schema_doc}
 
 USER QUESTION: Which department has the highest headcount?
-SQL: SELECT department FROM dim_employees ORDER BY current_headcount DESC LIMIT 1;
+SQL: SELECT department FROM hrms_data ORDER BY current_headcount DESC LIMIT 1;
 
 USER QUESTION: Which project has the highest billable hours?
-SQL: SELECT project_name FROM dim_projects ORDER BY billable_hours DESC LIMIT 1;
+SQL: SELECT project_name FROM crm_pipeline_and_projects ORDER BY billable_hours DESC LIMIT 1;
 
 USER QUESTION: {req.question}
 SQL:"""
@@ -306,14 +308,16 @@ def get_executive_briefing():
     """Generates the AI Chief of Staff weekly briefing."""
     try:
         # 1. Gather the latest data snapshot
-        fin_df = run_query("SELECT * FROM fact_business_performance ORDER BY month DESC LIMIT 1")
-        hc_df = run_query("SELECT SUM(current_headcount) as total, SUM(active_hirings) as hirings, SUM(attrition_count) as attrition FROM dim_employees")
-        csat_df = run_query("SELECT AVG(csat_score) as avg_csat, COUNT(*) as active_projects FROM dim_projects WHERE csat_score > 0")
-        projects_df = run_query("SELECT * FROM dim_projects")
+        fin_df = run_query("SELECT * FROM finance_sheets ORDER BY month DESC LIMIT 1")
+        hc_df = run_query("SELECT SUM(current_headcount) as total, SUM(active_hirings) as hirings, SUM(attrition_count) as attrition FROM hrms_data")
+        csat_df = run_query("SELECT AVG(csat_score) as avg_csat, COUNT(*) as active_projects FROM crm_pipeline_and_projects WHERE csat_score > 0")
+        projects_df = run_query("SELECT * FROM crm_pipeline_and_projects")
+        pipe_df = run_query("SELECT SUM(pipeline_value) as total_pipeline FROM crm_pipeline_and_projects")
 
         fin = fin_df.iloc[0].to_dict() if not fin_df.empty else {}
         hc = hc_df.iloc[0].to_dict() if not hc_df.empty else {}
         csat = csat_df.iloc[0].to_dict() if not csat_df.empty else {}
+        pipeline = pipe_df.iloc[0]["total_pipeline"] if not pipe_df.empty else 0.0
         
         blockers = projects_df[projects_df["blockers_flag"] == "Yes"]["project_name"].tolist() if not projects_df.empty else []
         delayed = projects_df[projects_df["milestone_status"] == "Delayed"]["project_name"].tolist() if not projects_df.empty else []
@@ -321,9 +325,9 @@ def get_executive_briefing():
         # 2. Build the snapshot text
         snapshot = f"""
         FINANCIAL SNAPSHOT (latest month: {fin.get('month','N/A')})
-        - Actual Revenue : ${fin.get('actual_revenue', 0):,.0f}
-        - MRR            : ${fin.get('mrr', 0):,.0f}
-        - Weighted Pipeline: ${fin.get('total_weighted_pipeline', 0):,.0f}
+        - Actual Revenue : ${float(fin.get('actual_revenue', 0) or 0):,.0f}
+        - MRR            : ${float(fin.get('mrr', 0) or 0):,.0f}
+        - Weighted Pipeline: ${float(pipeline or 0):,.0f}
 
         PEOPLE
         - Total Headcount : {hc.get('total', 0)} employees
@@ -331,7 +335,7 @@ def get_executive_briefing():
         - Attrition       : {hc.get('attrition', 0)} this period
 
         DELIVERY
-        - Average CSAT  : {round(csat.get('avg_csat', 0), 2)}/5.0
+        - Average CSAT  : {float(csat.get('avg_csat', 0) or 0):.2f}/5.0
         - Projects with blockers : {', '.join(blockers) if blockers else 'None'}
         - Delayed milestones     : {', '.join(delayed)  if delayed  else 'None'}
         """
