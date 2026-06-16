@@ -3,7 +3,7 @@ import {
   Box, Flex, VStack, Text, Heading, SimpleGrid, Card, CardBody,
   Stat, StatLabel, StatNumber, StatHelpText, StatArrow, Input, Button, Spinner, Badge
 } from '@chakra-ui/react';
-import { LayoutDashboard, MessageSquare, Sparkles, Activity, FileText, Star } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Sparkles, Activity, FileText, Star, MessageCircle } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Brush
 } from 'recharts';
@@ -23,6 +23,10 @@ export default function App() {
 
   const [briefing, setBriefing] = useState("");
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
+
+  const [feedbackInput, setFeedbackInput] = useState("");
+  const [isFeedbackSubmitting, setIsFeedbackSubmitting] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState(null);
 
   // --- Data Fetching on Mount ---
   // Create a reusable fetch function
@@ -75,6 +79,29 @@ export default function App() {
       console.error(err);
     }
     setIsChatLoading(false);
+  };
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackInput) return;
+    setIsFeedbackSubmitting(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: feedbackInput })
+      });
+      if (res.ok) {
+        setFeedbackStatus("success");
+        setFeedbackInput("");
+        setTimeout(() => setFeedbackStatus(null), 3000);
+      } else {
+        setFeedbackStatus("error");
+      }
+    } catch (err) {
+      console.error(err);
+      setFeedbackStatus("error");
+    }
+    setIsFeedbackSubmitting(false);
   };
 
   // --- Core Design Variables ---
@@ -139,6 +166,9 @@ export default function App() {
           <NavItem id="dashboard" icon={LayoutDashboard} label="Executive View" />
           <NavItem id="briefing" icon={FileText} label="Weekly Briefing" />
           <NavItem id="warehouse" icon={MessageSquare} label="Data Warehouse" />
+          <Box pt={4} mt={4} borderTop="1px solid" borderColor={theme.borderSubtle}>
+            <NavItem id="feedback" icon={MessageCircle} label="Feedback & Support" />
+          </Box>
         </VStack>
       </Box>
 
@@ -151,6 +181,7 @@ export default function App() {
             {activeView === "dashboard" && "Financial Overview"}
             {activeView === "briefing" && "AI Chief of Staff Briefing"}
             {activeView === "warehouse" && "Data Warehouse Query Engine"}
+            {activeView === "feedback" && "Feedback & Support"}
           </Heading>
 
           <Flex align="center" gap={6}>
@@ -467,6 +498,74 @@ export default function App() {
                 )}
               </CardBody>
             </Card>
+          )}
+
+          {/* ========================================= */}
+          {/* VIEW 4: FEEDBACK & SUPPORT                */}
+          {/* ========================================= */}
+          {activeView === "feedback" && (
+            <Flex direction="column" maxW="800px" mx="auto">
+              <Card {...cardStyle}>
+                <CardBody p={10}>
+                  <Heading size="md" color={theme.textPrimary} mb={2}>Submit a Complaint or Request</Heading>
+                  <Text color={theme.textMuted} mb={8}>Have an issue with the dashboard? Want to request a new feature? Write it below and it will be sent directly to the development team.</Text>
+
+                  <VStack align="stretch" spacing={6}>
+                    <Box as="textarea" 
+                      value={feedbackInput}
+                      onChange={(e) => setFeedbackInput(e.target.value)}
+                      placeholder="Describe your issue or feature request in detail..."
+                      bg="transparent"
+                      color={theme.textPrimary}
+                      w="full"
+                      minH="150px"
+                      p={4}
+                      borderRadius="xl"
+                      border="1px solid"
+                      borderColor={theme.borderSubtle}
+                      _focus={{ borderColor: theme.accentPurple, outline: "none", boxShadow: `0 0 0 1px ${theme.accentPurple}` }}
+                      style={{ resize: "vertical" }}
+                    />
+
+                    <Flex justify="space-between" align="center">
+                      <Box>
+                        {feedbackStatus === "success" && <Text color={theme.accentLime} fontWeight="bold">Feedback submitted successfully!</Text>}
+                        {feedbackStatus === "error" && <Text color="red.400" fontWeight="bold">Error submitting feedback. Please try again.</Text>}
+                      </Box>
+                      <Button
+                        size="lg"
+                        bg={theme.accentPurple}
+                        color={theme.bgMain}
+                        _hover={{ bg: "#c89dff" }}
+                        px={10}
+                        onClick={handleFeedbackSubmit}
+                        isLoading={isFeedbackSubmitting}
+                        fontWeight="bold"
+                        borderRadius="xl"
+                      >
+                        Submit Feedback
+                      </Button>
+                    </Flex>
+                  </VStack>
+                </CardBody>
+              </Card>
+
+              <Flex justify="center" mt={10}>
+                <Text color={theme.textMuted}>
+                  Or prefer to file an issue directly?{' '}
+                  <Box as="a" 
+                    href="https://github.com/shivanshbagai/ceo-dashboard/issues" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    color={theme.accentPurple}
+                    fontWeight="bold"
+                    _hover={{ textDecoration: "underline" }}
+                  >
+                    Visit our GitHub Repository
+                  </Box>
+                </Text>
+              </Flex>
+            </Flex>
           )}
 
         </Box>

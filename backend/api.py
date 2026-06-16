@@ -116,6 +116,9 @@ def clean_sql(sql: str) -> str:
 class ChatRequest(BaseModel):
     question: str
 
+class FeedbackRequest(BaseModel):
+    message: str
+
 # --- Endpoints ---
 
 @app.get("/api/kpis/latest")
@@ -364,6 +367,19 @@ def get_executive_briefing():
         
         briefing_text = _call_llm(snapshot, system=system, max_tokens=500)
         return {"briefing": briefing_text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/feedback")
+def submit_feedback(req: FeedbackRequest):
+    """Saves user feedback/complaints to the Supabase feedback table."""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO feedback (message) VALUES (%s)", (req.message,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
