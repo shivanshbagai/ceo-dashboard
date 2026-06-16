@@ -138,6 +138,7 @@ def get_latest_kpis():
         pipe_df = run_query("""
             SELECT SUM(
                 CASE deal_stage
+                    WHEN 'Closed Won'    THEN pipeline_value * 1.00
                     WHEN 'Negotiation'   THEN pipeline_value * 0.70
                     WHEN 'Proposal'      THEN pipeline_value * 0.40
                     WHEN 'Qualification' THEN pipeline_value * 0.20
@@ -145,7 +146,7 @@ def get_latest_kpis():
                 END
             ) as total_pipeline
             FROM crm_pipeline_and_projects
-            WHERE deal_stage IN ('Negotiation', 'Proposal', 'Qualification')
+            WHERE deal_stage IN ('Closed Won', 'Negotiation', 'Proposal', 'Qualification')
         """)
         pipeline = pipe_df.iloc[0]["total_pipeline"] if not pipe_df.empty else 0.0
         if pipeline is None:
