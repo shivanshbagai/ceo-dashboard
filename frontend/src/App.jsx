@@ -188,7 +188,7 @@ export default function App() {
                   <Card {...cardStyle}>
                     <CardBody p={6}>
                       <Stat>
-                        <StatLabel color={theme.textMuted} fontWeight="600" textTransform="uppercase" letterSpacing="wider" mb={2}>Actual Revenue</StatLabel>
+                        <StatLabel color={theme.textMuted} fontWeight="600" textTransform="uppercase" letterSpacing="wider" mb={2}>Actual Revenue </StatLabel>
                         <Flex justify="space-between" align="flex-end">
                           <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
                             ₹{(kpis.actual_revenue / 1000).toFixed(1)}k
@@ -197,6 +197,7 @@ export default function App() {
                             {kpis.revenue_delta_pct >= 0 ? '+' : ''}{kpis.revenue_delta_pct}%
                           </Badge>
                         </Flex>
+                        <Text fontSize="xs" color={theme.textMuted} mt={2}>Latest month</Text>
                       </Stat>
                     </CardBody>
                   </Card>
@@ -208,6 +209,7 @@ export default function App() {
                         <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
                           ₹{(kpis.mrr / 1000).toFixed(1)}k
                         </StatNumber>
+                        <Text fontSize="xs" color={theme.textMuted} mt={2}>Monthly recurring</Text>
                       </Stat>
                     </CardBody>
                   </Card>
@@ -220,6 +222,7 @@ export default function App() {
                         <StatNumber fontSize="4xl" fontWeight="800" color={theme.textPrimary}>
                           ₹{(kpis.pipeline / 1000).toFixed(1)}k
                         </StatNumber>
+                        <Text fontSize="xs" color={theme.textMuted} mt={2}>All open deals (risk-adjusted)</Text>
                       </Stat>
                     </CardBody>
                   </Card>
