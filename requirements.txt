@@ -1,6 +1,5 @@
 fastapi
 uvicorn
 pandas
-google-genai
 python-dotenv
-psycopg2-binary
+supabase
